@@ -5,6 +5,7 @@
 #include "timer.h"
 #include "trap.h"
 #include "proc.h"
+#include "riscv.h"
 
 uint64 sys_write(int fd, uint64 va, uint len)
 {
@@ -35,33 +36,84 @@ uint64 sys_sched_yield()
 
 uint64 sys_gettimeofday(TimeVal *val, int _tz) // TODO: implement sys_gettimeofday in pagetable. (VA to PA)
 {
-	// YOUR CODE
-	val->sec = 0;
-	val->usec = 0;
+	TimeVal localVal;
+
 
 	/* The code in `ch3` will leads to memory bugs*/
 
-	// uint64 cycle = get_cycle();
-	// val->sec = cycle / CPU_FREQ;
-	// val->usec = (cycle % CPU_FREQ) * 1000000 / CPU_FREQ;
+	uint64 cycle = get_cycle();
+	localVal.sec = cycle / CPU_FREQ;
+	localVal.usec = (cycle % CPU_FREQ) * 1000000 / CPU_FREQ;
+
+	copyout(curr_proc()->pagetable, (uint64)val, (char*)&localVal, sizeof(TimeVal));
+
 	return 0;
 }
 
 // TODO: add support for mmap and munmap syscall.
 // hint: read through docstrings in vm.c. Watching CH4 video may also help.
 // Note the return value and PTE flags (especially U,X,W,R)
+
+uint64 sys_mmap(uint64 start, uint64 len, int port, int flag, int fd){
+	//ignore falg, ignore fd 
+	if (len == 0) {
+		return 0;
+	}
+	if (len > (1 << 30)) { //greater than 1GiB
+		return -1;
+	}
+	if ((port & ~0x7) != 0){
+		return -1;
+	}
+	if((port & 0x7) == 0){
+		return -1;
+	}
+
+	//roundup len
+	len = PGROUNDUP(len);
+
+	for (uint64 val = start; val < start + len; val += PGSIZE) {
+		pte_t *pte = walk(curr_proc()->pagetable, val, 0);
+		if (pte != 0 && (*pte & PTE_V)) {
+    		return -1;
+		}
+	}
+	for (uint64 val = start; val < start + len; val += PGSIZE) {
+		void *paddr = kalloc();
+		if (paddr == 0) {
+    		return -1;
+		}
+
+		memset(paddr, 0, PGSIZE);
+
+		int perm = PTE_U;
+		if (port & 1) perm |= PTE_R;
+		if (port & 2) perm |= PTE_W;
+		if (port & 4) perm |= PTE_X;	
+
+		mappages(curr_proc()->pagetable, val, PGSIZE, (uint64)paddr, perm);
+		}
+
+	return 0;
+	
+}
 /*
 * LAB1: you may need to define sys_task_info here
 */
 uint64 sys_task_info(struct TaskInfo *ti){
+
+	TaskInfo localTask;
+
 	struct proc *p = curr_proc();
-	ti->status = Running;
+	localTask.status = Running;
 	uint64 now = get_cycle() / (CPU_FREQ/1000);
-	ti->time = (int)(now - p->first_time);
+	localTask.time = (int)(now - p->first_time);
 
 	for (int i = 0; i < 500; i++){
-		ti->syscall_times[i] = p->syscall_times[i];
+		localTask.syscall_times[i] = p->syscall_times[i];
 	}
+
+	copyout(curr_proc()->pagetable, (uint64)ti, (char*)&localTask, sizeof(TaskInfo));
 
 	return 0;
 }
