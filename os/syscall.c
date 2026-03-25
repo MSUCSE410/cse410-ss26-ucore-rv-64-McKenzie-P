@@ -6,6 +6,7 @@
 #include "trap.h"
 #include "proc.h"
 #include "riscv.h"
+#include "vm.h"
 
 uint64 sys_write(int fd, uint64 va, uint len)
 {
@@ -104,7 +105,7 @@ uint64 sys_munmap(uint64 start, uint64 len){
 
 	for (uint64 val = start; val < start + len; val += PGSIZE) {
 		pte_t *pte = walk(curr_proc()->pagetable, val, 0);
-		if (pte == 0 && (*pte & PTE_V)) {
+		if (pte == 0 || !(*pte & PTE_V)) {
     		return -1;
 		}
 	}
@@ -119,7 +120,7 @@ uint64 sys_munmap(uint64 start, uint64 len){
 */
 uint64 sys_task_info(struct TaskInfo *ti){
 
-	TaskInfo localTask;
+	struct TaskInfo localTask;
 
 	struct proc *p = curr_proc();
 	localTask.status = Running;
@@ -130,7 +131,7 @@ uint64 sys_task_info(struct TaskInfo *ti){
 		localTask.syscall_times[i] = p->syscall_times[i];
 	}
 
-	copyout(curr_proc()->pagetable, (uint64)ti, (char*)&localTask, sizeof(TaskInfo));
+	copyout(curr_proc()->pagetable, (uint64)ti, (char*)&localTask, sizeof(struct TaskInfo));
 
 	return 0;
 }
@@ -170,6 +171,14 @@ void syscall()
 	case SYS_task_info:
 		ret = sys_task_info((struct TaskInfo *)args[0]);
 		break;
+
+	//new cases for ch4!
+	case SYS_mmap:
+    	ret = sys_mmap(args[0], args[1], args[2], args[3], args[4]);
+    	break;
+	case SYS_munmap:
+    	ret = sys_munmap(args[0], args[1]);
+    	break;
 	default:
 		ret = -1;
 		errorf("unknown syscall %d", id);
