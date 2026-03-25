@@ -97,6 +97,23 @@ uint64 sys_mmap(uint64 start, uint64 len, int port, int flag, int fd){
 	return 0;
 	
 }
+
+uint64 sys_munmap(uint64 start, uint64 len){
+	
+	len = PGROUNDUP(len);
+
+	for (uint64 val = start; val < start + len; val += PGSIZE) {
+		pte_t *pte = walk(curr_proc()->pagetable, val, 0);
+		if (pte == 0 && (*pte & PTE_V)) {
+    		return -1;
+		}
+	}
+
+	uvmunmap(curr_proc()->pagetable, start, len/PGSIZE, 1);
+	return 0;
+
+}
+
 /*
 * LAB1: you may need to define sys_task_info here
 */
